@@ -1,7 +1,7 @@
 import telebot, json, webbrowser, re, requests, sqlite3, redis, os
 from telebot import types
 
-API_TOKEN = '7227340595:AAF9rj6eZdTgY13qiuABXIawYv9gLWqKWGE'
+API_TOKEN = '7227340595:AAE0ps5m0aRZk3zusLdVctS03ZmE4w8w8PM'
 ADMIN_ID = 81522084
 
 bot = telebot.TeleBot(API_TOKEN)
