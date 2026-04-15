@@ -1,114 +1,205 @@
-@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID, content_types=['text', 'audio', 'document', 'photo', 'sticker', 'video', 'video_note', 'voice', 'location', 'contact', 'animation'])
-def handle_admin_commands(message):
-    text = message.text or ""
-    user_id = message.from_user.id
+import os
+import json
+import asyncio
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove
+)
+
+# ================= الإعدادات =================
+API_TOKEN = os.getenv('API_TOKEN', '7227340595:AAE0ps5m0aRZk3zusLdVctS03ZmE4w8w8PM')
+ADMIN_ID = int(os.getenv('ADMIN_ID', 81522084))
+
+bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+DATA_FILE = "bot_data.json"
+
+# ================= التخزين =================
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {"custom_buttons": []}
+
+def save_data(data):
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# ================= الحالات (FSM) =================
+class BotStates(StatesGroup):
+    waiting_for_button_name = State()
+    waiting_for_button_emoji = State()
+    waiting_for_button_style = State()
+
+# ================= بناء الكيبورد الثابت =================
+def get_main_keyboard():
+    data = load_data()
     
-    if text == "قائمة المستخدمين":
-        bot.send_message(ADMIN_ID, f"عدد المشتركين الحالي: {len(users)}", reply_markup=admin_keyboard())
-    elif text == "الاحصائيات":
-        stats = f"إجمالي المستخدمين: {len(users)}\nالمحظورين: {len(blocked_users)}\nمحظوري التواصل: {len(twasl_blocked)}\nقنوات الاشتراك: {len(get_subscription_channels())}"
-        bot.send_message(ADMIN_ID, stats, reply_markup=admin_keyboard())
-    elif text == "حظر عضو":
-        msg = bot.send_message(ADMIN_ID, "ارسل ايدي الشخص المراد حظره:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_block)
-    elif text == "فك حظر":
-        msg = bot.send_message(ADMIN_ID, "ارسل ايدي الشخص لفك حظره:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_unblock)
-    elif text == "حظر تواصل":
-        msg = bot.send_message(ADMIN_ID, "ارسل ايدي الشخص المراد حظره من التواصل:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_twasl_block)
-    elif text == "الغاء حظر تواصل":
-        msg = bot.send_message(ADMIN_ID, "ارسل ايدي الشخص لفك حظره من التواصل:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_twasl_unblock)
-    elif text == "اذاعة للكل":
-        msg = bot.send_message(ADMIN_ID, "ارسل نص الاذاعة الان:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_broadcast)
-    elif text == "اضافة قناة":
-        msg = bot.send_message(ADMIN_ID, "ارسل يوزر القناة مع @:", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_add_channel)
-    elif text == "حذف قناة":
-        channels = get_subscription_channels()
-        if not channels:
-            bot.send_message(ADMIN_ID, "لا توجد قنوات مضافة.", reply_markup=admin_keyboard())
-            return
-        markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-        for ch in channels:
-            markup.add(types.KeyboardButton(f"حذف {ch[0]}"))
-        markup.add(types.KeyboardButton("الغاء"))
-        msg = bot.send_message(ADMIN_ID, "اضغط على اسم القناة للحذف:", reply_markup=markup)
-        bot.register_next_step_handler(msg, process_remove_channel)
-    elif text == "قنوات الاشتراك":
-        channels = get_subscription_channels()
-        if not channels:
-            bot.send_message(ADMIN_ID, "لا توجد قنوات مضافة.", reply_markup=admin_keyboard())
-            return
-        msg_text = "القنوات المضافة للاشتراك الإجباري\n\n"
-        for i, (ch_username, ch_name) in enumerate(channels, 1):
-            msg_text += f"{i}. {ch_username} - {ch_name}\n"
-        bot.send_message(ADMIN_ID, msg_text, reply_markup=admin_keyboard())
-    elif text == "تفعيل التواصل":
-        Redis.set("TwaslBot", "true")
-        bot.send_message(ADMIN_ID, "تم تفعيل التواصل", reply_markup=admin_keyboard())
-    elif text == "تعطيل التواصل":
-        Redis.set("TwaslBot", "false")
-        bot.send_message(ADMIN_ID, "تم تعطيل التواصل", reply_markup=admin_keyboard())
-    elif text == "تغيير رد ستارت":
-        msg = bot.send_message(ADMIN_ID, "ارسل نص رد ستارت الجديد\nالمتغيرات: #الاسم #اليوزر #الايدي", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_change_start)
-    elif text == "تغيير رد التواصل":
-        msg = bot.send_message(ADMIN_ID, "ارسل نص رد التواصل الجديد", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_change_reply)
-    elif text == "اظهار رد التواصل":
-        Redis.set("ShowReplyMsg", "true")
-        bot.send_message(ADMIN_ID, "تم اظهار رد التواصل", reply_markup=admin_keyboard())
-    elif text == "اخفاء رد التواصل":
-        Redis.set("ShowReplyMsg", "false")
-        bot.send_message(ADMIN_ID, "تم اخفاء رد التواصل", reply_markup=admin_keyboard())
-    elif text == "تغير لون":
-        msg = bot.send_message(ADMIN_ID, "• حسناً عزيزي المطور ارسل نص الزر الذي تريد تعديل لونة", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_button_name_for_color)
-    elif text == "اضف رمز مميز":
-        msg = bot.send_message(ADMIN_ID, "• حسناً عزيزي المطور ارسل نص الزر الذي تريد اضافة له ايموجي", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, process_button_name_for_emoji)
+    # الزر الأساسي للمطور
+    keyboard = [
+        [KeyboardButton(text="إضافة زر جديد")]
+    ]
+    
+    # بناء الأزرار المخصصة التي صنعها المطور
+    custom_buttons_row = []
+    for btn in data.get("custom_buttons", []):
+        btn_kwargs = {"text": btn["name"]}
         
-    # نظام الرد المطور على المستخدمين (يدعم الوسائط وتجاوز الخصوصية)
-    elif message.reply_to_message:
-        # البحث عن ID المستخدم المرتبط بالرسالة
-        target_id = Redis.get(f"reply_to:{message.reply_to_message.message_id}")
-        
-        # كإجراء احتياطي، المحاولة من توجيه الرسالة
-        if not target_id and message.reply_to_message.forward_from:
-            target_id = message.reply_to_message.forward_from.id
+        # 1. إضافة الرمز المميز (Premium) إن وُجد، أو الرمز العادي
+        if btn.get("custom_emoji_id"):
+            btn_kwargs["icon_custom_emoji_id"] = btn["custom_emoji_id"]
+        elif btn.get("regular_emoji"):
+            btn_kwargs["text"] = f"{btn['regular_emoji']} {btn['name']}"
             
-        if target_id:
-            target_id = int(target_id)
-            if target_id in twasl_blocked:
-                bot.send_message(message.chat.id, "هذا المستخدم محظور من التواصل", reply_to_message_id=message.message_id)
-                return
-            try:
-                if message.content_type == 'text':
-                    bot.send_message(target_id, message.text)
-                elif message.content_type == 'photo':
-                    bot.send_photo(target_id, message.photo[-1].file_id, caption=message.caption or "")
-                elif message.content_type == 'video':
-                    bot.send_video(target_id, message.video.file_id, caption=message.caption or "")
-                elif message.content_type == 'document':
-                    bot.send_document(target_id, message.document.file_id, caption=message.caption or "")
-                elif message.content_type == 'audio':
-                    bot.send_audio(target_id, message.audio.file_id, caption=message.caption or "")
-                elif message.content_type == 'voice':
-                    bot.send_voice(target_id, message.voice.file_id)
-                elif message.content_type == 'video_note':
-                    bot.send_video_note(target_id, message.video_note.file_id)
-                elif message.content_type == 'sticker':
-                    bot.send_sticker(target_id, message.sticker.file_id)
+        # 2. إضافة اللون (Style) إن وُجد
+        if btn.get("style") and btn["style"] != "default":
+            btn_kwargs["style"] = btn["style"]
+            
+        custom_buttons_row.append(KeyboardButton(**btn_kwargs))
+        
+        # ترتيب الأزرار: زرين في كل صف
+        if len(custom_buttons_row) == 2:
+            keyboard.append(custom_buttons_row)
+            custom_buttons_row = []
+            
+    if custom_buttons_row:
+        keyboard.append(custom_buttons_row)
+        
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        is_persistent=True # هذه الخاصية تمنع اختفاء الكيبورد تماماً
+    )
+
+# ================= أوامر البداية والإلغاء =================
+@dp.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("مرحباً عزيزي المطور! الكيبورد السفلي ثابت الآن ويدعم الألوان والرموز المميزة.", reply_markup=get_main_keyboard())
+
+@dp.message(F.text == "الغاء")
+async def cancel_handler(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("تم الإلغاء.", reply_markup=get_main_keyboard())
+
+# ================= مسار إضافة الزر =================
+@dp.message(F.text == "إضافة زر جديد")
+async def add_custom_button_cmd(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID: return
+    
+    # نزيل الكيبورد مؤقتاً أثناء إدخال البيانات لعدم التشتت
+    await message.answer("أرسل الآن **اسم الزر** الذي تريده (مثال: طلباتي):\n\nللإلغاء أرسل (الغاء)", reply_markup=ReplyKeyboardRemove())
+    await state.set_state(BotStates.waiting_for_button_name)
+
+@dp.message(BotStates.waiting_for_button_name)
+async def process_button_name(message: Message, state: FSMContext):
+    if message.text == "الغاء": return
+    btn_name = message.text.strip()
+    
+    await state.update_data(btn_name=btn_name)
+    await message.answer(f"الاسم: '{btn_name}'.\nالآن أرسل **الإيموجي المميز (Premium)** أو إيموجي عادي:\n\nللإلغاء أرسل (الغاء)")
+    await state.set_state(BotStates.waiting_for_button_emoji)
+
+@dp.message(BotStates.waiting_for_button_emoji)
+async def process_button_emoji(message: Message, state: FSMContext):
+    if message.text == "الغاء": return
+    
+    custom_emoji_id = None
+    regular_emoji = None
+    
+    # التقاط الرمز المميز
+    if message.entities:
+        for ent in message.entities:
+            if ent.type == "custom_emoji":
+                custom_emoji_id = ent.custom_emoji_id
+                break
                 
-                bot.send_message(message.chat.id, "تم ارسال رسالتك للمستخدم بنجاح ✅", reply_to_message_id=message.message_id)
-            except Exception as e:
-                bot.send_message(message.chat.id, "تعذر ارسال الرد، ربما قام المستخدم بحظر البوت.", reply_to_message_id=message.message_id)
+    if not custom_emoji_id:
+        regular_emoji = message.text.strip()
+        
+    await state.update_data(custom_emoji_id=custom_emoji_id, regular_emoji=regular_emoji)
+    
+    # قائمة الألوان لاختيار لون الزر
+    markup = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="1- احمر"), KeyboardButton(text="2- اخضر")],
+            [KeyboardButton(text="3- ازرق"), KeyboardButton(text="4- افتراضي")],
+            [KeyboardButton(text="الغاء")]
+        ],
+        resize_keyboard=True
+    )
+    
+    text_msg = (
+        "حسنا ارسل لي اسم اللون الذي تريده للزر\n"
+        "الاختيارات المتاحة:\n\n"
+        "1- احمر (Danger)\n"
+        "2- اخضر (Success)\n"
+        "3- ازرق (Primary)\n"
+        "4- افتراضي\n\n"
+        "للإلغاء ارسل (الغاء)"
+    )
+    await message.answer(text_msg, reply_markup=markup)
+    await state.set_state(BotStates.waiting_for_button_style)
+
+@dp.message(BotStates.waiting_for_button_style)
+async def process_button_style(message: Message, state: FSMContext):
+    if message.text == "الغاء": return
+    text = message.text
+    
+    style = "default"
+    if "احمر" in text: style = "danger"
+    elif "اخضر" in text: style = "success"
+    elif "ازرق" in text: style = "primary"
+    
+    user_data = await state.get_data()
+    new_btn = {
+        "name": user_data["btn_name"],
+        "custom_emoji_id": user_data.get("custom_emoji_id"),
+        "regular_emoji": user_data.get("regular_emoji"),
+        "style": style
+    }
+    
+    data = load_data()
+    # لتحديث الزر إذا كان موجوداً مسبقاً بنفس الاسم
+    data["custom_buttons"] = [b for b in data.get("custom_buttons", []) if b["name"] != new_btn["name"]]
+    data["custom_buttons"].append(new_btn)
+    save_data(data)
+    
+    await state.clear()
+    await message.answer("تم إنشاء الزر الملون وتثبيت الكيبورد بنجاح! ✅", reply_markup=get_main_keyboard())
+
+# ================= الردود على الأزرار المخصصة =================
+@dp.message()
+async def handle_custom_button_clicks(message: Message):
+    data = load_data()
+    for btn in data.get("custom_buttons", []):
+        
+        # إذا كان الإيموجي عادي، فهو مدمج في النص، أما المميز فالنص يصل بدونه
+        if btn.get("regular_emoji"):
+            expected_text = f"{btn['regular_emoji']} {btn['name']}".strip()
         else:
-            if message.content_type == 'text':
-                bot.send_message(ADMIN_ID, "استخدم الاوامر من الكيبورد", reply_markup=admin_keyboard())
-    else:
-        if message.content_type == 'text':
-            bot.send_message(ADMIN_ID, "استخدم الاوامر من الكيبورد", reply_markup=admin_keyboard())
+            expected_text = btn['name']
+            
+        if message.text == expected_text:
+            await message.answer(f"لقد ضغطت للتو على الزر: {btn['name']}", reply_markup=get_main_keyboard())
+            return
+            
+async def main():
+    print("Bot is starting perfectly...")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
